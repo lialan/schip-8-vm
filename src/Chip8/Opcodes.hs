@@ -18,14 +18,22 @@ runInstruction :: VMState  -- ^ Initial CPU state
 runInstruction s operands = op s operands
   where
     op = case operands .&. 0xF000 of
-        0x0000 -> case operands .&. 0xF of
-            0x0 -> op00E0
-            0xE -> op00EE
-            _ -> error $ showHex operands ""
+        0x0000 -> case operands .&. 0x00F0 of
+            0x00C0 -> op00CN     -- ^ SCHIP
+            0x00F0 -> case operands .&. 0xF of
+              0xB -> op00FB      -- ^ SCHIP
+              0xC -> op00FC      -- ^ SCHIP
+              0xD -> op00FD      -- ^ SCHIP
+              0xE -> op00FE      -- ^ SCHIP
+              0xF -> op00FF      -- ^ SCHIP
+            _ -> case operands .&. 0xF of
+              0x0 -> op00E0
+              0xE -> op00EE
         0x1000 -> op1NNN
         0x2000 -> op2NNN
         0x3000 -> op3XKK
         0x4000 -> op4XKK
+        0x5000 -> op5XY0
         0x6000 -> op6XKK
         0x7000 -> op7XKK
         0x8000 -> case operands .&. 0xF of
@@ -38,16 +46,14 @@ runInstruction s operands = op s operands
             0x6 -> op8XY6
             0x7 -> op8XY7
             0xE -> op8XYE
-            _ -> error $ showHex operands ""
         0x9000 -> op9XY0
         0xA000 -> opANNN
         0xB000 -> opBNNN
         0xC000 -> opCXKK
-        0xD000 -> opDXYN
+        0xD000 -> opDXYN 
         0xE000 -> case operands .&. 0xFF of
             0x9E -> opEX9E
             0xA1 -> opEXA1
-            _ -> error $ showHex operands ""
         0xF000 -> case operands .&. 0xFF of
             0x07 -> opFX07
             0x0A -> opFX0A
@@ -55,10 +61,12 @@ runInstruction s operands = op s operands
             0x18 -> opFX18
             0x1E -> opFX1E
             0x29 -> opFX29
+            0x30 -> opFX30   -- ^ SCHIP
             0x33 -> opFX33
             0x55 -> opFX55
             0x65 -> opFX65
-            _ -> error $ showHex operands ""
+            0x75 -> opFX75   -- ^ SCHIP
+            0x85 -> opFX85   -- ^ SCHIP
         _ -> error $ showHex operands ""
 
 -- | Get the NNN value from an instruction
@@ -81,12 +89,18 @@ iX = fromIntegral . flip shiftR 8 . (0xF00 .&.)
 iY :: Word16 -> Word8
 iY = fromIntegral . flip shiftR 4 . (0xF0 .&.)
 
+-- | Scroll display N lines down
+op00CN :: VMState
+       -> Word16
+       -> VMState
+op00CN s instr = shiftScreen s 0 (fromIntegral (instr .&. 0xF))
+
 -- | Clear the display
 op00E0 :: VMState  -- ^ Initial CPU state
        -> Word16   -- ^ Full CPU instruction
        -> VMState  -- ^ Resulting CPU state
-op00E0 s _ =
-    s { display = listArray ((0,0),(63,31)) (repeat False) }
+op00E0 s@VMState { extended = e } _ =
+      s { display = listArray ((0,0),(127,63)) (repeat False) }
 
 -- | Return from subroutine
 op00EE :: VMState  -- ^ Initial CPU state
@@ -96,6 +110,36 @@ op00EE s@VMState { stack = stack } _ =
     s { pc = pc', stack = stack' }
   where
     (pc' : stack') = stack
+
+-- | Scroll display 4 pixels right
+op00FB :: VMState
+       -> Word16
+       -> VMState
+op00FB s _ = shiftScreen s 4 0
+
+-- | Scroll display 4 pixels left
+op00FC :: VMState
+       -> Word16
+       -> VMState
+op00FC s _ = shiftScreen s (-4) 0
+
+-- | Exit CHIP interpreter
+op00FD :: VMState
+       -> Word16
+       -> VMState
+op00FD s _ = error $ "exiting."
+
+-- | Disable extended screen mode
+op00FE :: VMState
+       -> Word16
+       -> VMState
+op00FE s _ = s {extended = False}
+
+-- | Enable extended screen mode for full-screen graphics
+op00FF :: VMState
+       -> Word16
+       -> VMState
+op00FF s _ = s {extended = True}
 
 -- | Jump to location NNN
 op1NNN :: VMState  -- ^ Initial CPU state
@@ -377,6 +421,13 @@ opFX29 :: VMState  -- ^ Initial CPU state
 opFX29 s@VMState { v = v } op =
     s { i = fromIntegral (v ! iX op) * 5 } -- Char sprites are 5 bytes long and start at 0
 
+-- | Point I to 10-byte font sprite for digit VX (0..9)
+opFX30 :: VMState  -- ^ Initial CPU state
+       -> Word16   -- ^ Full CPU instruction
+       -> VMState  -- ^ Resulting CPU state
+opFX30 s@VMState { v = v } op =
+    s { i = fromIntegral (v ! iX op) * 10 + 0x100} 
+
 -- | Store BCD of VX at I, I+1 and I+2
 opFX33 :: VMState  -- ^ Initial CPU state
        -> Word16   -- ^ Full CPU instruction
@@ -410,17 +461,48 @@ opFX65 s@VMState { v = v, i = i, memory = memory } op =
     x = iX op
     v' = map (\ n -> (n, memory ! (i + fromIntegral n))) (range (0, x))
 
+-- | Store V0..VX in RPL user flags (X <= 7)
+opFX75 :: VMState  -- ^ Initial CPU state
+       -> Word16   -- ^ X value
+       -> VMState  -- ^ Resulting CPU state
+opFX75 s@VMState {v = v, rpl = rpl} op = s { rpl = rpl // updates }
+  where 
+    x = iX op
+    updates = map (\n -> (n, v ! n)) (range (0, x))
+
+-- | Read V0..VX from RPL user flags (X <= 7)
+opFX85 :: VMState  -- ^ Initial CPU state
+       -> Word16   -- ^ Full CPU instruction
+       -> VMState  -- ^ Resulting CPU state
+opFX85 s@VMState {v = v, rpl = rpl}  op = s { v = v // v' }
+  where
+    x = iX op
+    v' = map (\n -> (n, rpl ! n)) (range (0, x))
+
 -- | Gets a sprite from a memory location and returns it's pixel coordinates
 getSprite :: VMState           -- ^ The VM state
           -> Word16            -- ^ The memory address of the sprite
           -> Word8             -- ^ The byte length of the sprite in memory
           -> [(Word8, Word8)]  -- ^ Pixel coordinates representing the sprite
-getSprite s@VMState { memory = memory } addr n =
+getSprite s@VMState { memory = memory, extended = extended } addr n =
+  if ((n == 0) && (extended == True)) then getLargeSprite s addr else
     [(fromIntegral x, fromIntegral y)
         | y <- range (0, n - 1)
         , x <- [0,1..7]
         , let shift = 7 - x -- This prevents the sprite from being flipped
         , shiftR (memory ! (addr + fromIntegral y)) shift .&. 1 == 1]
+
+getLargeSprite :: VMState
+               -> Word16
+               -> [(Word8, Word8)]
+getLargeSprite s@VMState { memory = memory } addr =
+    [(fromIntegral x, fromIntegral y)
+      | y <- [0,1..15]
+      , x <- [0,1..15]
+      , let shift = 15 - x
+      , shiftR (memory ! (addr + (fromIntegral y) * 2)) (shift `mod` 8) .&. 1 == 1]
+
+
 
 -- | Draws a sprite on the display and finds if there is a collision
 drawSprite :: VMState          -- ^ The VM state
@@ -429,13 +511,13 @@ drawSprite :: VMState          -- ^ The VM state
            -> Word16           -- ^ The memory address of the sprite
            -> Word8            -- ^ The byte length of the sprite in memory
            -> (Bool, VMState)  -- ^ The new state and if a collision occured
-drawSprite s@VMState { display = display } x y addr n =
+drawSprite s@VMState { display = display, extended = e } x y addr n =
     (collision, s { display = display // display' })
   where
     -- Adds the x,y offset to the relative pixel co-ordinate
     addOffset (sx, sy) = (sx + x, sy + y)
     -- Checks if the pixel co-ordinate is within the display bounds
-    inBounds (x, y) = (x >= 0 && x < 64) && (y >= 0 && y < 32)
+    inBounds (x, y) = if e then (x >= 0 && x < 128) && (y >= 0 && y < 64) else (x >= 0 && x < 64) && (y >= 0 && y < 32)
     -- Gets the sprite's relative pixels, adds offsets and filters out of bounds
     sprite = filter inBounds $ map addOffset $ getSprite s addr n
     -- Folding func to turn sprite in to updated pixels and flag on collision
@@ -446,6 +528,23 @@ drawSprite s@VMState { display = display } x y addr n =
         pixel = boolXor (display ! coord) True
     -- Actually fold over the sprite coordinates
     (collision, display') = foldl folder (False, []) sprite
+
+screenCoordinates :: VMState -> Word8 -> Word8 -> [((Word8, Word8), Bool)]
+screenCoordinates s@VMState { extended = e } offx offy =
+    filter inBounds [((x + offx, y + offy), display s ! (x, y))
+             | x <- [0..127],
+               y <- [0..63]]
+    where
+      inBounds ((x, y), z) = if e then (x >= 0 && x < 128) && (y >= 0 && y < 64) else (x >= 0 && x < 64) && (y >= 0 && y < 32)
+
+shiftScreen :: VMState
+            -> Word8            -- ^ x coordinate offset
+            -> Word8            -- ^ y coordinate offset
+            -> VMState
+shiftScreen s@VMState {display = display } offx offy = 
+    s { display = listArray ((0,0),(127,63)) (repeat False) // display' }
+    where
+      display' = screenCoordinates s offx offy      
 
 -- | Converts a boolean value to a 1 or 0 Word8 flag
 boolToFlag :: Bool -> Word8

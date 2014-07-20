@@ -17,21 +17,29 @@ import Graphics.Gloss.Interface.Pure.Game
 import Chip8.State (VMState(..), create, nextInstruction, showDisplay)
 import Chip8.Opcodes (runInstruction)
 
+cpuFrequency :: Int
+cpuFrequency = 600
+
+screenFrequency :: Int
+screenFrequency = 1 
+
 -- | Runs the next instruction on the VM state and returns the resulting state
 step :: VMState  -- ^ The starting state
      -> VMState  -- ^ The stepped through state
-step s@VMState { pc = pc, memory = memory, delayTimer = delayTimer } =
-    case waitForKeypress s of
-        Nothing -> runInstruction s' op
-        Just _ -> s
+step s@VMState { pc = pc, memory = memory, delayTimer = delayTimer, tick = tick, display = d} =
+  case waitForKeypress s of
+      Nothing -> runInstruction s' op
+      Just _ -> s
   where
     op = nextInstruction s
-    delayTimer' = if delayTimer > 0 then delayTimer - 1 else delayTimer
-    s' = s { pc = pc + 2, delayTimer = delayTimer' }
+    tick' = tick + 1
+    delayTimer' = if and [delayTimer > 0, tick' `mod` ((fromIntegral cpuFrequency) `div` 60) == 0]  then delayTimer - 1 else delayTimer
+    s' = s { pc = pc + 2, delayTimer = delayTimer', tick = tick' }
+
 
 -- | Generates a Gloss picture to represent the current state's display
 drawScreen :: VMState -> Picture
-drawScreen s@VMState { display = d } = color white $
+drawScreen s@VMState { display = d, extended = e } = color white $
     pictures [
         translate 200 160 $
         scale 0.25 0.25 $
@@ -49,13 +57,16 @@ drawScreen s@VMState { display = d } = color white $
         scale 1 (-1) $
         pictures
         [translate x' y' pixel
-            | x <- [0,1..63]
-            , y <- [0,1..31]
-            , let x' = (fromIntegral x) * 10
-            , let y' = (fromIntegral y) * 10
-            , d ! (x, y)]]
+            | x <- [0,1..xsize]
+            , y <- [0,1..ysize]
+            , let x' = (fromIntegral x) * size
+            , let y' = (fromIntegral y) * size
+            , d ! (x, y) ]]
   where
-    pixel = rectangleSolid 10 10
+    size = if e then 5 else 10
+    xsize = if e then 127 else 63
+    ysize = if e then 63 else 31 
+    pixel = if e then rectangleSolid 5 5 else rectangleSolid 10 10
 
 -- | Handles keyboard input by adding/removing pressed keys from the state
 handleInput :: Event -> VMState -> VMState
@@ -80,17 +91,17 @@ run state =
     play
         window       -- Window info
         black        -- Background colour
-        100          -- Steps per second (100Hz)
+        cpuFrequency -- Steps per second (100Hz)
         state        -- Starting state
         drawScreen   -- Display generating function
         handleInput  -- Input handling function
         step'        -- State stepping function
   where
     step' _ = step
-    window = InWindow "CHIP-8" (660, 380) (10, 10)
+    window = InWindow "SCHIP-8" (660, 380) (100, 100)
 
 main :: IO ()
 main = do
-    program <- BS.readFile "./roms/INVADERS"
+    program <- BS.readFile "/Users/xunhaoli/Downloads/SGAMES/SGAMES/ANT.ch8"
     randGen <- newStdGen
     run $ create (BS.unpack program) randGen
