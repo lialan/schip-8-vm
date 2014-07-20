@@ -4,6 +4,7 @@ import Data.Array.Base
 import Data.Char
 import qualified Data.Set as S
 import qualified Data.ByteString as BS
+import System.Environment 
 import System.IO
 import System.Random (newStdGen)
 import Numeric (showHex)
@@ -102,6 +103,7 @@ run state =
 
 main :: IO ()
 main = do
-    program <- BS.readFile "/Users/xunhaoli/Downloads/SGAMES/SGAMES/ANT.ch8"
+    args <- getArgs
+    program <- BS.readFile $ head args
     randGen <- newStdGen
     run $ create (BS.unpack program) randGen
