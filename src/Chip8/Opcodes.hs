@@ -10,6 +10,8 @@ import qualified Data.Set as S
 import System.Random
 import Numeric (showHex)
 
+import Debug.Trace
+
 import Chip8.State (VMState(..))
 
 runInstruction :: VMState  -- ^ Initial CPU state
@@ -499,8 +501,8 @@ getLargeSprite s@VMState { memory = memory } addr =
     [(fromIntegral x, fromIntegral y)
       | y <- [0,1..15]
       , x <- [0,1..15]
-      , let shift = 15 - x
-      , shiftR (memory ! (addr + (fromIntegral y) * 2)) (shift `mod` 8) .&. 1 == 1]
+      , let shift = (15 - x) `mod` 8 
+      , if (x >= 8) then shiftR (memory ! (addr + (fromIntegral y) * 2 + 1)) shift .&. 1 == 1 else shiftR (memory ! (addr + (fromIntegral y) * 2)) shift .&. 1 == 1]
 
 
 

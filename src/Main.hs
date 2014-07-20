@@ -19,7 +19,7 @@ import Chip8.State (VMState(..), create, nextInstruction, showDisplay)
 import Chip8.Opcodes (runInstruction)
 
 cpuFrequency :: Int
-cpuFrequency = 600
+cpuFrequency = 10
 
 screenFrequency :: Int
 screenFrequency = 1 
