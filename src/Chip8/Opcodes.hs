@@ -14,6 +14,15 @@ import Debug.Trace
 
 import Chip8.State (VMState(..))
 
+xSize :: VMState -> Word8 
+xSize s@VMState { extended = e} =
+  if e then 128 else 64
+
+ySize :: VMState -> Word8 
+ySize s@VMState { extended = e} =
+  if e then 64 else 32
+
+
 runInstruction :: VMState  -- ^ Initial CPU state
                -> Word16   -- ^ Full CPU instruction
                -> VMState  -- ^ Resulting CPU state
@@ -117,7 +126,7 @@ op00EE s@VMState { stack = stack } _ =
 op00FB :: VMState
        -> Word16
        -> VMState
-op00FB s _ = shiftScreen s 4 0
+op00FB s i = shiftScreen s 4 0
 
 -- | Scroll display 4 pixels left
 op00FC :: VMState
@@ -519,7 +528,7 @@ drawSprite s@VMState { display = display, extended = e } x y addr n =
     -- Adds the x,y offset to the relative pixel co-ordinate
     addOffset (sx, sy) = (sx + x, sy + y)
     -- Checks if the pixel co-ordinate is within the display bounds
-    inBounds (x, y) = if e then (x >= 0 && x < 128) && (y >= 0 && y < 64) else (x >= 0 && x < 64) && (y >= 0 && y < 32)
+    inBounds (x, y) = (x >= 0 && x < xSize s) && (y >= 0 && y < ySize s)
     -- Gets the sprite's relative pixels, adds offsets and filters out of bounds
     sprite = filter inBounds $ map addOffset $ getSprite s addr n
     -- Folding func to turn sprite in to updated pixels and flag on collision
@@ -537,14 +546,14 @@ screenCoordinates s@VMState { extended = e } offx offy =
              | x <- [0..127],
                y <- [0..63]]
     where
-      inBounds ((x, y), z) = if e then (x >= 0 && x < 128) && (y >= 0 && y < 64) else (x >= 0 && x < 64) && (y >= 0 && y < 32)
+      inBounds ((x, y), z) = (x >= 0 && x < xSize s) && (y >= 0 && y < ySize s)
 
 shiftScreen :: VMState
             -> Word8            -- ^ x coordinate offset
             -> Word8            -- ^ y coordinate offset
             -> VMState
 shiftScreen s@VMState {display = display } offx offy = 
-    s { display = listArray ((0,0),(127,63)) (repeat False) // display' }
+    s { display = listArray ((0,0),(xSize s - 1, ySize s  - 1)) (repeat False) // display' }
     where
       display' = screenCoordinates s offx offy      
 

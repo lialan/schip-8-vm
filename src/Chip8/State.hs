@@ -3,7 +3,6 @@ module Chip8.State
       VMState(..)
     , create
     , nextInstruction
-    , showDisplay
     ) where
 
 import Data.Word
@@ -40,7 +39,7 @@ create p g = VMState { memory = listArray (0x0, 0xFFF) memContents
                      , i = 0x0
                      , v = listArray (0x0, 0xF) []
                      , stack = []
-                     , display = listArray ((0,0),(128,64)) (repeat False)
+                     , display = listArray ((0,0),(127,63)) (repeat False)
                      , pressed = S.empty
                      , delayTimer = 0
                      , waitForKeypress = Nothing
@@ -92,12 +91,3 @@ nextInstruction VMState { pc = pc, memory = memory } =
   where
     b1 = fromIntegral $ memory ! pc       -- First byte in instruction
     b2 = fromIntegral $ memory ! (pc + 1) -- Second byte in instruction
-
--- | Returns a string representation of a VM state's display
-showDisplay :: VMState  -- ^ The VM state
-            -> String   -- ^ A string showing the display contents using ascii
-showDisplay s =
-    unlines [unwords [toPixel (display s ! (x, y)) | x <- [0..63]] | y <- [0..31]]
-  where
-    toPixel True = "█"
-    toPixel False = " "

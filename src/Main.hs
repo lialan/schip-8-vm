@@ -15,11 +15,11 @@ import Graphics.Gloss.Data.Color (black, white)
 import Graphics.Gloss.Data.Display
 import Graphics.Gloss.Interface.Pure.Game
 
-import Chip8.State (VMState(..), create, nextInstruction, showDisplay)
+import Chip8.State (VMState(..), create, nextInstruction)
 import Chip8.Opcodes (runInstruction)
 
 cpuFrequency :: Int
-cpuFrequency = 10
+cpuFrequency = 100
 
 screenFrequency :: Int
 screenFrequency = 1 
